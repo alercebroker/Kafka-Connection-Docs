@@ -1,0 +1,439 @@
+#+title: KafkaOutputConnection
+
+* The ALeRCE Kafka Stream
+[[https://kafka.apache.org/][Apache Kafka]] is an open source platform for handling real time data streams. It allows consumers to listen to events or messages on a specific topic (data stream). ALeRCE provides two kafka topics with alerts processed by our machine learning classifiers so that users can connect and process the stream in real time.
+
+Users registered to consume from our output streams will be able to process alerts comming from [[https://www.ztf.caltech.edu/][ZTF]] and processed by ALeRCE in real time each night. We provide data by date and each date will be available for the 48 hours that can be later be accessed on demand using our [[https://api.alerce.online/ztf/v1/][HTTP API]], [[https://alerce.readthedocs.io/en/latest/index.html][Python Client]] or the web interface: [[https://alerce.online][ALeRCE Explorer]].
+
+** Topic Strategy
+Every topic will be separated by date. Every day a new topic will be available with a sufix containing the date. Topic creation will be performed as soon as ALeRCE processes data from ZTF, which is usually a few minutes. The time at which the topic becomes available depends on ZTF. Topics will contain data for 48 hours, so if you need to process data from more than 48 hours ago, you would have to use a different ALeRCE product.
+
+So for example if today is 2021-03-15 the available topics would be: ~lc_classifier_20210315~, ~lc_classifier_20210314~, ~lc_classifier_20210313~, ~stamp_classifier_20210315~, ~stamp_classifier_20210314~, ~stamp_classifier_20210313~.
+
+** The Lightcurve Classifier Topic :ATTACH:
+This topic is the output of the lightcurve classifier which also includes the features used to classify the alert. Not all alerts get classified though, only if the alert belongs to an object that has at least 6 detections on each band, this object goes through the ~lc_classifier~.
+
+The following image shows the ALeRCE Pipeline. The LC classifier step is at the end of an array of processes that calculate many things. Only alerts that belong to objects with 6 or more detections on each band get classified. For more details on the ALeRCE pipeline visit [[http://alerce.science/alerce-pipeline/][ALeRCE Pipeline]].
+
+[[attachment:_20210831_182003screenshot.png]]
+
+#+begin_quote
+Note that ALeRCE Stream icon in the above diagram refers to one or more topics. In this case we provide classifications from the light curve classifier in an isolated topic.
+#+end_quote
+*** Schema
+The schema is as follows
+**** Topic contents
+| field         | type            | content                                     |
+|---------------+-----------------+---------------------------------------------|
+| oid           | string          | object id                                   |
+| candid        | long            | candidate id or alert id                    |
+| features      | features_schema | features calculated for this alert's object |
+| probabilities |                    |                                             |
+#+begin_src python
+{
+    'doc': 'Late Classification',
+    'name': 'probabilities_and_features',
+    'type': 'record',
+    'fields': [
+        {'name': 'oid', 'type': 'string'},
+        {"name": "candid", "type": "long"},
+        FEATURES_SCHEMA,
+        {
+            'name': 'lc_classification',
+            'type': {
+                'type': 'record',
+                'name': 'late_record',
+                'fields': [
+                    {
+                        'name': 'probabilities',
+                        'type': {
+                            'type': 'map',
+                            'values': ['float'],
+                        }
+                    },
+                    {
+                        'name': 'class',
+                        'type': 'string'
+                    },
+                    {
+                        'name': 'hierarchical',
+                        'type':
+                        {
+                            'name': 'root',
+                            'type': 'map',
+                            'values': [
+                                {
+                                    'type': 'map',
+                                    'values': 'float'
+                                },
+                                {
+                                    'type': 'map',
+                                    'values': {
+                                        'type': 'map',
+                                        'values': 'float'
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    ]
+}
+#+end_src
+Where ~FEATURES_SCHEMA~ is the following schema:
+#+begin_src python
+{
+  "name": "features",
+  "type": {
+      "name": "features_record",
+      "type": "record",
+      "fields": [
+        {"name": "Amplitude_1", "type": ["float", "null"]},
+        {"name": "Amplitude_2", "type": ["float", "null"]},
+        {"name": "AndersonDarling_1", "type": ["float", "null"]},
+        {"name": "AndersonDarling_2", "type": ["float", "null"]},
+        {"name": "Autocor_length_1", "type": ["double", "null"]},
+        {"name": "Autocor_length_2", "type": ["double", "null"]},
+        {"name": "Beyond1Std_1", "type": ["float", "null"]},
+        {"name": "Beyond1Std_2", "type": ["float", "null"]},
+        {"name": "Con_1", "type": ["double", "null"]},
+        {"name": "Con_2", "type": ["double", "null"]},
+        {"name": "Eta_e_1", "type": ["float", "null"]},
+        {"name": "Eta_e_2", "type": ["float", "null"]},
+        {"name": "ExcessVar_1", "type": ["double", "null"]},
+        {"name": "ExcessVar_2", "type": ["double", "null"]},
+        {"name": "GP_DRW_sigma_1", "type": ["double", "null"]},
+        {"name": "GP_DRW_sigma_2", "type": ["double", "null"]},
+        {"name": "GP_DRW_tau_1", "type": ["float", "null"]},
+        {"name": "GP_DRW_tau_2", "type": ["float", "null"]},
+        {"name": "Gskew_1", "type": ["float", "null"]},
+        {"name": "Gskew_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_1_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_1_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_2_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_2_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_3_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_3_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_4_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_4_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_5_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_5_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_6_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_6_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_7_1", "type": ["float", "null"]},
+        {"name": "Harmonics_mag_7_2", "type": ["float", "null"]},
+        {"name": "Harmonics_mse_1", "type": ["double", "null"]},
+        {"name": "Harmonics_mse_2", "type": ["double", "null"]},
+        {"name": "Harmonics_phase_2_1", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_2_2", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_3_1", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_3_2", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_4_1", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_4_2", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_5_1", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_5_2", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_6_1", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_6_2", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_7_1", "type": ["float", "null"]},
+        {"name": "Harmonics_phase_7_2", "type": ["float", "null"]},
+        {"name": "IAR_phi_1", "type": ["double", "null"]},
+        {"name": "IAR_phi_2", "type": ["float", "null"]},
+        {"name": "LinearTrend_1", "type": ["float", "null"]},
+        {"name": "LinearTrend_2", "type": ["double", "null"]},
+        {"name": "MHPS_PN_flag_1", "type": ["double", "null"]},
+        {"name": "MHPS_PN_flag_2", "type": ["double", "null"]},
+        {"name": "MHPS_high_1", "type": ["float", "null"]},
+        {"name": "MHPS_high_2", "type": ["double", "null"]},
+        {"name": "MHPS_low_1", "type": ["float", "null"]},
+        {"name": "MHPS_low_2", "type": ["float", "null"]},
+        {"name": "MHPS_non_zero_1", "type": ["double", "null"]},
+        {"name": "MHPS_non_zero_2", "type": ["double", "null"]},
+        {"name": "MHPS_ratio_1", "type": ["float", "null"]},
+        {"name": "MHPS_ratio_2", "type": ["float", "null"]},
+        {"name": "MaxSlope_1", "type": ["float", "null"]},
+        {"name": "MaxSlope_2", "type": ["float", "null"]},
+        {"name": "Mean_1", "type": ["float", "null"]},
+        {"name": "Mean_2", "type": ["float", "null"]},
+        {"name": "Meanvariance_1", "type": ["float", "null"]},
+        {"name": "Meanvariance_2", "type": ["float", "null"]},
+        {"name": "MedianAbsDev_1", "type": ["float", "null"]},
+        {"name": "MedianAbsDev_2", "type": ["float", "null"]},
+        {"name": "MedianBRP_1", "type": ["float", "null"]},
+        {"name": "MedianBRP_2", "type": ["float", "null"]},
+        {"name": "Multiband_period", "type": ["float", "null"]},
+        {"name": "PairSlopeTrend_1", "type": ["float", "null"]},
+        {"name": "PairSlopeTrend_2", "type": ["float", "null"]},
+        {"name": "PercentAmplitude_1", "type": ["float", "null"]},
+        {"name": "PercentAmplitude_2", "type": ["float", "null"]},
+        {"name": "Period_band_1", "type": ["float", "null"]},
+        {"name": "Period_band_2", "type": ["float", "null"]},
+        {"name": "delta_period_1", "type": ["float", "null"]},
+        {"name": "delta_period_2", "type": ["float", "null"]},
+        {"name": "Period_fit", "type": ["float", "null"]},
+        {"name": "Power_rate_1/2", "type": ["float", "null"]},
+        {"name": "Power_rate_1/3", "type": ["float", "null"]},
+        {"name": "Power_rate_1/4", "type": ["float", "null"]},
+        {"name": "Power_rate_2", "type": ["float", "null"]},
+        {"name": "Power_rate_3", "type": ["float", "null"]},
+        {"name": "Power_rate_4", "type": ["float", "null"]},
+        {"name": "Psi_CS_1", "type": ["float", "null"]},
+        {"name": "Psi_CS_2", "type": ["float", "null"]},
+        {"name": "Psi_eta_1", "type": ["float", "null"]},
+        {"name": "Psi_eta_2", "type": ["float", "null"]},
+        {"name": "Pvar_1", "type": ["float", "null"]},
+        {"name": "Pvar_2", "type": ["float", "null"]},
+        {"name": "Q31_1", "type": ["float", "null"]},
+        {"name": "Q31_2", "type": ["float", "null"]},
+        {"name": "Rcs_1", "type": ["float", "null"]},
+        {"name": "Rcs_2", "type": ["float", "null"]},
+        {"name": "SF_ML_amplitude_1", "type": ["float", "null"]},
+        {"name": "SF_ML_amplitude_2", "type": ["float", "null"]},
+        {"name": "SF_ML_gamma_1", "type": ["float", "null"]},
+        {"name": "SF_ML_gamma_2", "type": ["float", "null"]},
+        {"name": "SPM_A_1", "type": ["float", "null"]},
+        {"name": "SPM_A_2", "type": ["float", "null"]},
+        {"name": "SPM_beta_1", "type": ["float", "null"]},
+        {"name": "SPM_beta_2", "type": ["float", "null"]},
+        {"name": "SPM_chi_1", "type": ["float", "null"]},
+        {"name": "SPM_chi_2", "type": ["float", "null"]},
+        {"name": "SPM_gamma_1", "type": ["float", "null"]},
+        {"name": "SPM_gamma_2", "type": ["float", "null"]},
+        {"name": "SPM_t0_1", "type": ["float", "null"]},
+        {"name": "SPM_t0_2", "type": ["float", "null"]},
+        {"name": "SPM_tau_fall_1", "type": ["float", "null"]},
+        {"name": "SPM_tau_fall_2", "type": ["float", "null"]},
+        {"name": "SPM_tau_rise_1", "type": ["float", "null"]},
+        {"name": "SPM_tau_rise_2", "type": ["float", "null"]},
+        {"name": "Skew_1", "type": ["float", "null"]},
+        {"name": "Skew_2", "type": ["float", "null"]},
+        {"name": "SmallKurtosis_1", "type": ["float", "null"]},
+        {"name": "SmallKurtosis_2", "type": ["float", "null"]},
+        {"name": "Std_1", "type": ["float", "null"]},
+        {"name": "Std_2", "type": ["float", "null"]},
+        {"name": "StetsonK_1", "type": ["float", "null"]},
+        {"name": "StetsonK_2", "type": ["float", "null"]},
+        {"name": "W1-W2", "type": ["double", "null"]},
+        {"name": "W2-W3", "type": ["double", "null"]},
+        {"name": "delta_mag_fid_1", "type": ["float", "null"]},
+        {"name": "delta_mag_fid_2", "type": ["float", "null"]},
+        {"name": "delta_mjd_fid_1", "type": ["float", "null"]},
+        {"name": "delta_mjd_fid_2", "type": ["float", "null"]},
+        {"name": "dmag_first_det_fid_1", "type": ["double", "null"]},
+        {"name": "dmag_first_det_fid_2", "type": ["double", "null"]},
+        {"name": "dmag_non_det_fid_1", "type": ["double", "null"]},
+        {"name": "dmag_non_det_fid_2", "type": ["double", "null"]},
+        {"name": "first_mag_1", "type": ["float", "null"]},
+        {"name": "first_mag_2", "type": ["float", "null"]},
+        {"name": "g-W2", "type": ["double", "null"]},
+        {"name": "g-W3", "type": ["double", "null"]},
+        {"name": "g-r_max", "type": ["float", "null"]},
+        {"name": "g-r_max_corr", "type": ["float", "null"]},
+        {"name": "g-r_mean", "type": ["float", "null"]},
+        {"name": "g-r_mean_corr", "type": ["float", "null"]},
+        {"name": "gal_b", "type": ["float", "null"]},
+        {"name": "gal_l", "type": ["float", "null"]},
+        {"name": "iqr_1", "type": ["float", "null"]},
+        {"name": "iqr_2", "type": ["float", "null"]},
+        {
+            "name": "last_diffmaglim_before_fid_1",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "last_diffmaglim_before_fid_2",
+            "type": ["double", "null"],
+        },
+        {"name": "last_mjd_before_fid_1", "type": ["double", "null"]},
+        {"name": "last_mjd_before_fid_2", "type": ["double", "null"]},
+        {
+            "name": "max_diffmaglim_after_fid_1",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "max_diffmaglim_after_fid_2",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "max_diffmaglim_before_fid_1",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "max_diffmaglim_before_fid_2",
+            "type": ["double", "null"],
+        },
+        {"name": "mean_mag_1", "type": ["float","null"]},
+        {"name": "mean_mag_2", "type": ["float","null"]},
+        {
+            "name": "median_diffmaglim_after_fid_1",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "median_diffmaglim_after_fid_2",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "median_diffmaglim_before_fid_1",
+            "type": ["double", "null"],
+        },
+        {
+            "name": "median_diffmaglim_before_fid_2",
+            "type": ["double", "null"],
+        },
+        {"name": "min_mag_1", "type": ["float", "null"]},
+        {"name": "min_mag_2", "type": ["float", "null"]},
+        {"name": "n_det_1", "type": ["double", "null"]},
+        {"name": "n_det_2", "type": ["double", "null"]},
+        {"name": "n_neg_1", "type": ["double", "null"]},
+        {"name": "n_neg_2", "type": ["double", "null"]},
+        {"name": "n_non_det_after_fid_1", "type": ["double", "null"]},
+        {"name": "n_non_det_after_fid_2", "type": ["double", "null"]},
+        {"name": "n_non_det_before_fid_1", "type": ["double", "null"]},
+        {"name": "n_non_det_before_fid_2", "type": ["double", "null"]},
+        {"name": "n_pos_1", "type": ["double", "null"]},
+        {"name": "n_pos_2", "type": ["double", "null"]},
+        {"name": "positive_fraction_1", "type": ["double", "null"]},
+        {"name": "positive_fraction_2", "type": ["double", "null"]},
+        {"name": "r-W2", "type": ["double", "null"]},
+        {"name": "r-W3", "type": ["double", "null"]},
+        {"name": "rb", "type": ["float", "null"]},
+        {"name": "sgscore1", "type": ["float", "null"]}
+    ],
+  }
+}
+#+end_src
+** The Stamp Classifier Topic
+*** Schema
+* How to access
+** Registration
+To access our stream you should follow this steps
+1. Let us know that you want access by sending an email to alerce.broker@gmail.com
+2. Fill out a form with data so that we can create the required credentials.
+   The form will ask you for at least this information:
+   - name
+   - last name
+   - institution
+   - email
+   - ip
+   - topic(s) you want access to
+3. Wait for confirmation from ALeRCE with your credentials
+
+*** Why are we asking for an IP and what IP should you provide ?
+We give access to specific IP's so that we can have more control over who connects to our server. We treat the output stream as a more constrained access because it is a more constrained use case. Most people will be ok by just using the public API, but if you need to have real time access, we give you that option.
+
+This IP should be your public IP from where you will consume the stream. If you want to connect from a local machine, like your personal computer or laptop, then make sure your ISP (Internet Service Provider) doesn't change your IP.
+
+We suggest you access the stream from a single static IP, and manage your own infrastructure to provide access on multiple devices. If it's not realtime data that you need, you can get the same content from our HTTP API.
+
+** Consuming from a topic
+Assuming you successfully registered and have access to the stream, there are multiple ways you can consume from a Kafka broker. In this guide we cover how to connect using our own Alert Processing Framework ([[https://apf.readthedocs.io/en/latest/][APF]]) which is a tool to dockerize and execute a per-message process consuming from a kafka server.
+
+Feel free to use any other method you would like, in Python we suggest the Confluent's Python Client, but keep in mind that for any method you would have to manually manage deserialization (except for APF which handles deserialization internally).
+
+Please follow the basic APF [[https://apf.readthedocs.io/en/latest/new_step.html][tutorial]] to get familiar with its terminology and components. Once you feel comfortable with it let's get configuring it to consume from the ALeRCE stream.
+
+*** Create a step
+Let's create a new APF step with the command
+#+begin_src sh
+apf new-step sn_process
+#+end_src
+The step will consume from the stamp_classifier topic and will execute a custom function on every alert classified as a SuperNova.
+*** Configure the step
+By default APF uses a [[https://apf.readthedocs.io/en/latest/consumers.html#apf.consumers.KafkaConsumer][KafkaConsumer]] so we only have to add the appropiate settings.
+**** Consumer settings
+In our ~settings.py~ file we have a dictionary called CONSUMER_CONFIG which is used to configure whatever consumer we use. In the case of KafkaConsumer we will add two keys inside the dictionary: ~PARAMS~ and ~TOPICS~. The first is a dictionary with all params passed to configure the [[https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#pythonclient-consumer][Confluent's Kafka Consumer]] and the second is string of comma separated list of topics that we want to connect.
+
+Required ~PARAMS~ are ~bootstrap.servers~ and ~group.id~ but to be able to authenticate we will add some more configuration like this:
+#+begin_src python
+# settings.py
+CONSUMER_CONFIG = {
+    "PARAMS": {
+        "bootstrap.servers": "52.72.162.197:9093",
+        "group.id": "sample_group_SN_STEP",
+        "security.protocol": "SASL_PLAINTEXT",
+        "sasl.mechanism": "SCRAM-SHA-256",
+        "sasl.username": "my_username",
+        "sasl.password": "my_password",
+        "auto.offset.reset": "earliest",
+    },
+    "TOPICS": "stamp_classifier_20200315",
+}
+#+end_src
+
+Lets break the above config:
+- 52.72.162.197 is the IP of the kafka server
+- 9093 is the port available for authentication
+- sample_group_SN_STEP is the name of the group for this consumer.
+  It is important that you use the provided group id as prefix. You can use any identifier you want after the one we gave you (probably the name of your institution).
+- SASL_PLAINTEXT should be used as security.protocol to authenticate.
+- SCRAM-SHA-256 should be used as sasl.mechanism
+  This ensures your password is secured through the web connection
+- sasl.username and sasl.password are the credentials we provided to you
+- auto.offset.reset=earliest means that the consumer group will start from the beginning of the topic
+- stamp_classifier_20200315 is the name of the topic we are consuming from
+  We can also provide a wildcard to connect to any date but you can manage subscribing to fewer topics using the APF [[id:6523863b-92d4-42d7-a5d0-cf42cd13f875][Topic Strategy]] feature.
+**** Execute method
+Coding the step can be as easy as adding our custom logic to the execute method. This method gets called each time a new alert (or batch) gets consumed. So keep this in mind when designing the code.
+#+begin_quote
+NOTE: If you want to consume and process many alerts at once, you have to provide extra options to the CONSUMER_CONFIG:
+
+- ~consume.messages~ (int): number of messages to consume
+- ~consume.timeout~ (int) (optional): seconds of timeout for the consume operation
+#+end_quote
+
+The step will verify if an alert is classified as a SN and then send a slack message with the object id with a link to the ALeRCE Explorer web app.
+
+Add this to ~step.py~ file:
+  #+begin_src python
+    import os
+    from slack_sdk import WebClient
+
+
+    def execute(self, message):
+        if message["class"] == "SN":
+            oid = message["objectId"]
+            explorer_link = f"https://alerce.online/object/{oid}"
+            client = WebClient(token=os.environ['SLACK_API_TOKEN'])
+            response = client.chat_postMessage(
+                channel='#sn_channel',
+                text=f"New SN: {explorer_link}")
+  #+end_src
+**** Run with python
+Running our new step with our local environment is easy. There's a script called ~run_step.py~ inside the scripts folder that we need to run.
+#+begin_src sh
+python scripts/run_step.py
+#+end_src
+This will start consuming from the stream and sending messages to our slack channel each time an alert is classified as SN
+**** Topic Strategy
+:PROPERTIES:
+:ID:       6523863b-92d4-42d7-a5d0-cf42cd13f875
+:END:
+Previously we mentioned that to automatically connect to each day's topic one can provide a wildcard and connect to any topic available that starts with a prefix. But to have more control over which topics we are subscribing we have the option to use a TopicStrategy class configurable inside our ~settings.py~.
+
+#+begin_src python
+CONSUMER_CONFIG = {
+  "TOPIC_STRATEGY": {
+    "CLASS": "apf.core.topic_management.DailyTopicStrategy",
+    "PARAMS": {
+        "topic_format": [
+            "stamp_classifier_%s",
+        ],
+        "date_format": "%Y%m%d",
+        "change_hour": 23,
+        "retention_days": 2,
+    }
+  }
+}
+#+end_src
+The above config sets the following topic strategy
+- stamp_classifier_%s will connect to every topic starting with stamp_classifier and %s is where the date would be
+- date_format is the format used (currently %Y%m%d)
+- It will connect to a new topic every day at 23:00 (11pm local time)
+- It will only connect to the last 2 topics since the server only contains messages for 48 hours.
+  This means that the consumer will automatically unsubscribe from older topics and subscribe to the latest topic every night. (You can set this value to 1 and only connect to the latest topic each night)
+**** Run with docker
+Packaging our step in a container is pre configured. We only need to invoke two commands from the root of the step.
+#+begin_src sh
+docker build -t sn_process .
+docker run --name my_custom_step -d sn_process
+#+end_src
