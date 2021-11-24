@@ -15,7 +15,7 @@ This topic is the output of the lightcurve classifier which also includes the fe
 
 The following image shows the ALeRCE Pipeline. The LC classifier step is at the end of an array of processes that calculate many things. Only alerts that belong to objects with 6 or more detections on each band get classified. For more details on the ALeRCE pipeline visit [[http://alerce.science/alerce-pipeline/][ALeRCE Pipeline]].
 
-[[attachment:_20210831_182003screenshot.png]]
+[[https://alerce-science.s3.amazonaws.com/images/Pipeline.max-1600x900.png]]
 
 #+begin_quote
 Note that ALeRCE Stream icon in the above diagram refers to one or more topics. In this case we provide classifications from the light curve classifier in an isolated topic.
@@ -23,12 +23,12 @@ Note that ALeRCE Stream icon in the above diagram refers to one or more topics. 
 *** Schema
 The schema is as follows
 **** Topic contents
-| field         | type            | content                                     |
-|---------------+-----------------+---------------------------------------------|
-| oid           | string          | object id                                   |
-| candid        | long            | candidate id or alert id                    |
-| features      | features_schema | features calculated for this alert's object |
-| probabilities |                    |                                             |
+| field             | type            | content                                                            |
+|-------------------+-----------------+--------------------------------------------------------------------|
+| oid               | string          | object id                                                          |
+| candid            | long            | candidate id or alert id                                           |
+| features          | features_schema | features calculated for this alert's object                        |
+| lc_classification | record          | all probabilities for each level of the hierarchical random forest |
 #+begin_src python
 {
     'doc': 'Late Classification',
@@ -304,6 +304,31 @@ Where ~FEATURES_SCHEMA~ is the following schema:
 #+end_src
 ** The Stamp Classifier Topic
 *** Schema
+#+begin_src python
+{
+    "doc": "Early Classification",
+    "name": "stamp_probabilities",
+    "type": "record",
+    "fields": [
+        {"name": "objectId", "type": "string"},
+        {"name": "candid", "type": "long"},
+        {
+            "name": "probabilities",
+            "type": {
+                "name": "probabilities",
+                "type": "record",
+                "fields": [
+                    {"name": "SN", "type": "float"},
+                    {"name": "AGN", "type": "float"},
+                    {"name": "VS", "type": "float"},
+                    {"name": "asteroid", "type": "float"},
+                    {"name": "bogus", "type": "float"},
+                ],
+            },
+        },
+    ],
+}
+#+end_src
 * How to access
 ** Registration
 To access our stream you should follow this steps
@@ -314,16 +339,8 @@ To access our stream you should follow this steps
    - last name
    - institution
    - email
-   - ip
    - topic(s) you want access to
 3. Wait for confirmation from ALeRCE with your credentials
-
-*** Why are we asking for an IP and what IP should you provide ?
-We give access to specific IP's so that we can have more control over who connects to our server. We treat the output stream as a more constrained access because it is a more constrained use case. Most people will be ok by just using the public API, but if you need to have real time access, we give you that option.
-
-This IP should be your public IP from where you will consume the stream. If you want to connect from a local machine, like your personal computer or laptop, then make sure your ISP (Internet Service Provider) doesn't change your IP.
-
-We suggest you access the stream from a single static IP, and manage your own infrastructure to provide access on multiple devices. If it's not realtime data that you need, you can get the same content from our HTTP API.
 
 ** Consuming from a topic
 Assuming you successfully registered and have access to the stream, there are multiple ways you can consume from a Kafka broker. In this guide we cover how to connect using our own Alert Processing Framework ([[https://apf.readthedocs.io/en/latest/][APF]]) which is a tool to dockerize and execute a per-message process consuming from a kafka server.
@@ -407,6 +424,7 @@ This will start consuming from the stream and sending messages to our slack chan
 **** Topic Strategy
 :PROPERTIES:
 :ID:       6523863b-92d4-42d7-a5d0-cf42cd13f875
+:ROAM_EXCLUDE: t
 :END:
 Previously we mentioned that to automatically connect to each day's topic one can provide a wildcard and connect to any topic available that starts with a prefix. But to have more control over which topics we are subscribing we have the option to use a TopicStrategy class configurable inside our ~settings.py~.
 
