@@ -365,7 +365,7 @@ Required ~PARAMS~ are ~bootstrap.servers~ and ~group.id~ but to be able to authe
 # settings.py
 CONSUMER_CONFIG = {
     "PARAMS": {
-        "bootstrap.servers": "52.72.162.197:9093",
+        "bootstrap.servers": "kafka.alerce.science:9093",
         "group.id": "sample_group_SN_STEP",
         "security.protocol": "SASL_PLAINTEXT",
         "sasl.mechanism": "SCRAM-SHA-256",
@@ -378,7 +378,7 @@ CONSUMER_CONFIG = {
 #+end_src
 
 Lets break the above config:
-- 52.72.162.197 is the IP of the kafka server
+- kafka.alerce.science is the kafka server
 - 9093 is the port available for authentication
 - sample_group_SN_STEP is the name of the group for this consumer.
   It is important that you use the provided group id as prefix. You can use any identifier you want after the one we gave you (probably the name of your institution).
